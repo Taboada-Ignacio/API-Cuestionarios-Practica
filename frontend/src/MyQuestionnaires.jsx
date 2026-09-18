@@ -1,0 +1,11 @@
+import React,{useEffect,useState} from 'react';
+import {api} from './attemptApi';
+const labels={BORRADOR:'Borrador',PRIVADO:'Privado',PUBLICO:'Público'};
+export default function MyQuestionnaires(){
+ const [list,setList]=useState(null),[page,setPage]=useState(0),[error,setError]=useState(''),[busy,setBusy]=useState(null),[retry,setRetry]=useState(0);
+ useEffect(()=>{const c=new AbortController();setError('');api('/bancos?page='+page+'&size=12',{signal:c.signal}).then(setList).catch(e=>{if(e.name!=='AbortError')setError(e.message);});return()=>c.abort();},[page,retry]);
+ async function status(bank,next){setBusy(bank.id);setError('');try{const saved=await api('/bancos/'+bank.id+'/estado',{method:'PUT',body:JSON.stringify({status:next})});setList(l=>({...l,items:l.items.map(x=>x.id===saved.id?saved:x)}));}catch(e){setError(e.message);}finally{setBusy(null);}}
+ return <div className="bank-panel"><div className="bank-heading"><div><p className="eyebrow">Tu contenido</p><h1>Mis cuestionarios</h1><p>Los borradores son para preparar; los privados para practicar; los públicos para compartir.</p></div><a className="bank-primary" href="#cuestionarios/nuevo">Cargar un cuestionario →</a></div>{error&&<div className="bank-message error" role="alert">{error}<button className="text-button" onClick={()=>setRetry(x=>x+1)}>Volver a cargar</button></div>}
+ {!list?<p role="status">Cargando cuestionarios…</p>:<section className="bank-box">{!list.total?<p>Todavía no cargaste cuestionarios.</p>:list.items.map(bank=><div className="owned-questionnaire" key={bank.id}><div><h2>{bank.name}</h2><p>{bank.active?labels[bank.status]:'Desactivado'}</p></div><label className="field">Estado<select aria-label="Estado" value={bank.status} disabled={!bank.active||!!busy} onChange={e=>status(bank,e.target.value)}>{Object.entries(labels).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label></div>)}{list.total>12&&<div className="list-pagination"><button className="bank-secondary" disabled={page===0||!!busy} onClick={()=>setPage(p=>p-1)}>Anterior</button><span>Página {page+1}</span><button className="bank-secondary" disabled={(page+1)*12>=list.total||!!busy} onClick={()=>setPage(p=>p+1)}>Siguiente</button></div>}</section>}
+ </div>;
+}
