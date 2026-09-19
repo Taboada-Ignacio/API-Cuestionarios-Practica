@@ -3,6 +3,7 @@ package ar.com.cuestionarios.backend;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
+import java.text.Normalizer;
 import java.util.*;
 import java.util.stream.IntStream;
 import static org.springframework.http.HttpStatus.*;
@@ -13,7 +14,8 @@ import static ar.com.cuestionarios.backend.ApiModels.*;
 public class BackendService {
     private final BackendRepository repository;
     private final CurrentUser current;
-    BackendService(BackendRepository repository,CurrentUser current) { this.repository=repository;this.current=current; }
+    private final AcademicCatalog academicCatalog;
+    BackendService(BackendRepository repository,CurrentUser current,AcademicCatalog academicCatalog) { this.repository=repository;this.current=current;this.academicCatalog=academicCatalog; }
     private UUID user(){return current.complete().id;}
     private void own(UUID owner){if(!user().equals(owner))throw new BackendException(NOT_FOUND,"Recurso no encontrado");}
     private Bank ownedBank(UUID id){Bank b=repository.get(Bank.class,id);own(b.ownerId);return b;}
@@ -28,7 +30,10 @@ public class BackendService {
         if(page<0 || page>1000000 || size<1 || size>100)
             throw new BackendException(BAD_REQUEST,"page debe ser 0..1000000 y size 1..100");
     }
-    private BankView view(Bank b) { return new BankView(b.id,b.name,b.active,b.ownerId,b.status); }
+    private CareerView view(Career c){return new CareerView(c.id,c.name,c.code,c.active,c.createdAt,c.updatedAt);}
+    private SubjectView view(Subject s){return new SubjectView(s.id,s.name,s.code,s.studyYear,s.active,view(repository.get(Career.class,s.careerId)),s.createdAt,s.updatedAt);}
+    private TagView view(Tag t){return new TagView(t.id,t.name,t.slug,t.createdAt);}
+    private BankView view(Bank b) { return new BankView(b.id,b.name,b.active,b.ownerId,b.status,b.subjectId==null?null:view(repository.get(Subject.class,b.subjectId)),b.evaluationType==null?null:b.evaluationType.name(),b.evaluationNumber,b.tags.stream().sorted(Comparator.comparing(t->t.name)).map(this::view).toList(),new AcademicSelectionView(b.academicUniversityId,b.academicFacultyId,b.academicCareerId,b.studyYear,b.academicSubjectName)); }
     private QuestionView view(Question q) {
         return new QuestionView(q.id,q.bankId,q.statement,q.explanation,
             q.options.stream().map(o->new OptionInput(o.text,o.correct)).toList(),q.active);
@@ -36,13 +41,13 @@ public class BackendService {
     private QuizView view(Quiz q) { return new QuizView(q.id,q.bankId,q.name,q.questionCount,q.active); }
 
     public BankView loadBank(BankLoadInput input) {
-        BankView bank=createBank(new BankInput(input.name()));
+        BankView bank=createBank(new BankInput(input.name(),input.subjectId(),input.evaluationType(),input.evaluationNumber(),input.tags(),input.academicUniversityId(),input.academicFacultyId(),input.academicCareerId(),input.studyYear(),input.academicSubjectName()));
         input.questions().forEach(question->createQuestion(bank.id(),question));
         if(input.status()!=null&&!input.status().equals("BORRADOR"))return status(bank.id(),new StatusInput(input.status()));
         return bank;
     }
     public BankView createBank(BankInput input) {
-        Bank b=new Bank(); b.ownerId=user(); b.name=input.name().trim(); repository.save(b); return view(b);
+        Bank b=new Bank(); b.ownerId=user(); b.name=input.name().trim(); applyClassification(b,input); repository.save(b); return view(b);
     }
     public BankView getBank(UUID id) { return view(readableBank(id)); }
     public PageView<BankView> practiceBanks(int page,int size){pagination(page,size);UUID uid=user();return new PageView<>(repository.scopedBanks(uid,true,page,size).stream().map(this::view).toList(),page,size,repository.scopedBankCount(uid,true));}
@@ -50,10 +55,31 @@ public class BackendService {
         pagination(page,size);
         return new PageView<>(repository.scopedBanks(user(),false,page,size).stream().map(this::view).toList(),page,size,repository.scopedBankCount(user(),false));
     }
+    public PageView<BankView> banks(int page,int size,boolean practice,BankFilters filters){pagination(page,size);validateFilters(filters);BankFilters normalized=new BankFilters(filters.careerId(),filters.subjectId(),filters.year(),filters.evaluationType()==null?null:evaluation(filters.evaluationType()).name(),filters.evaluationNumber(),filters.tags()==null?List.of():filters.tags().stream().map(this::slug).distinct().toList());UUID uid=user();return new PageView<>(repository.filteredBanks(uid,practice,page,size,normalized).stream().map(this::view).toList(),page,size,repository.filteredBankCount(uid,practice,normalized));}
     public BankView updateBank(UUID id,BankInput input) {
-        Bank b=ownedBank(id); active(b.active); b.name=input.name().trim(); return view(b);
+        Bank b=ownedBank(id);active(b.active);b.name=input.name().trim();if(input.subjectId()!=null||input.evaluationType()!=null||input.evaluationNumber()!=null||input.tags()!=null||input.academicCareerId()!=null)applyClassification(b,input);return view(b);
     }
     public void deactivateBank(UUID id) { ownedBank(id).active=false; }
+
+    private String clean(String value){return value==null?null:value.trim().replaceAll("\\s+"," ");}
+    private String academicName(String value){String cleaned=clean(value);if(cleaned==null||cleaned.isBlank())return null;Set<String> lower=Set.of("a","al","con","de","del","el","en","e","la","las","los","o","para","por","sin","u","y");String[] words=cleaned.toLowerCase(Locale.forLanguageTag("es")).split(" ");for(int i=0;i<words.length;i++)if(i==0||!lower.contains(words[i]))words[i]=words[i].substring(0,1).toUpperCase(Locale.forLanguageTag("es"))+words[i].substring(1);return String.join(" ",words);}
+    private String slug(String value){String normalized=Normalizer.normalize(clean(value),Normalizer.Form.NFD).replaceAll("\\p{M}+","").toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]+","-").replaceAll("(^-|-$)","");if(normalized.isBlank())throw new BackendException(BAD_REQUEST,"La etiqueta debe contener letras o números");return normalized;}
+    private EvaluationType evaluation(String value){if(value==null||value.isBlank())return null;try{return EvaluationType.valueOf(value.trim().toUpperCase(Locale.ROOT));}catch(IllegalArgumentException ex){throw new BackendException(BAD_REQUEST,"Tipo de evaluación inválido");}}
+    private Tag tag(String name){String cleaned=clean(name),slug=slug(name);return repository.tagBySlug(slug).orElseGet(()->{Tag tag=new Tag();tag.name=cleaned;tag.slug=slug;repository.save(tag);return tag;});}
+    private void applyClassification(Bank bank,BankInput input){EvaluationType evaluation=evaluation(input.evaluationType());if(input.evaluationNumber()!=null&&evaluation==null)throw new BackendException(BAD_REQUEST,"El número de evaluación requiere un tipo de evaluación");if(input.evaluationNumber()!=null&&input.evaluationNumber()<1)throw new BackendException(BAD_REQUEST,"El número de evaluación debe ser mayor o igual a 1");Subject subject=input.subjectId()==null?null:repository.get(Subject.class,input.subjectId());if(subject!=null&&(!subject.active||!repository.get(Career.class,subject.careerId).active))throw new BackendException(CONFLICT,"La materia o su carrera están desactivadas");academicCatalog.validateSelection(input.academicUniversityId(),input.academicFacultyId(),input.academicCareerId(),input.studyYear());bank.subjectId=input.subjectId();bank.evaluationType=evaluation;bank.evaluationNumber=input.evaluationNumber();bank.academicUniversityId=input.academicUniversityId();bank.academicFacultyId=input.academicFacultyId();bank.academicCareerId=input.academicCareerId();bank.studyYear=input.studyYear();bank.academicSubjectName=academicName(input.academicSubjectName());bank.tags.clear();if(input.tags()!=null)input.tags().stream().map(this::tag).forEach(bank.tags::add);}
+    private void validateFilters(BankFilters filters){if(filters.year()!=null&&filters.year()<1)throw new BackendException(BAD_REQUEST,"El año debe ser mayor o igual a 1");evaluation(filters.evaluationType());if(filters.evaluationNumber()!=null&&filters.evaluationNumber()<1)throw new BackendException(BAD_REQUEST,"El número debe ser mayor o igual a 1");}
+
+    public CareerView createCareer(CareerInput input){if(repository.careerByName(clean(input.name())).isPresent())throw new BackendException(CONFLICT,"La carrera ya existe");Career c=new Career();c.name=clean(input.name());c.code=clean(input.code());if(input.active()!=null)c.active=input.active();repository.save(c);return view(c);}
+    public CareerView getCareer(UUID id){return view(repository.get(Career.class,id));}
+    public List<CareerView> careers(Boolean active){return repository.careers(active).stream().map(this::view).toList();}
+    public CareerView updateCareer(UUID id,CareerInput input){Career c=repository.get(Career.class,id);repository.careerByName(clean(input.name())).filter(other->!other.id.equals(id)).ifPresent(other->{throw new BackendException(CONFLICT,"La carrera ya existe");});c.name=clean(input.name());c.code=clean(input.code());if(input.active()!=null)c.active=input.active();c.updatedAt=Instant.now();return view(c);}
+    public SubjectView createSubject(SubjectInput input){Career career=repository.get(Career.class,input.careerId());active(career.active);if(repository.subjectByName(career.id,clean(input.name())).isPresent())throw new BackendException(CONFLICT,"La materia ya existe en esta carrera");Subject s=new Subject();apply(s,input);repository.save(s);return view(s);}
+    private void apply(Subject s,SubjectInput input){if(input.studyYear()<1)throw new BackendException(BAD_REQUEST,"El año de cursado debe ser positivo");Career career=repository.get(Career.class,input.careerId());active(career.active);s.careerId=career.id;s.name=clean(input.name());s.code=clean(input.code());s.studyYear=input.studyYear();if(input.active()!=null)s.active=input.active();s.updatedAt=Instant.now();}
+    public SubjectView getSubject(UUID id){return view(repository.get(Subject.class,id));}
+    public List<SubjectView> subjects(UUID careerId,Integer year,Boolean active){if(careerId!=null)repository.get(Career.class,careerId);if(year!=null&&year<1)throw new BackendException(BAD_REQUEST,"El año debe ser positivo");return repository.subjects(careerId,year,active).stream().map(this::view).toList();}
+    public SubjectView updateSubject(UUID id,SubjectInput input){Subject s=repository.get(Subject.class,id);repository.subjectByName(input.careerId(),clean(input.name())).filter(other->!other.id.equals(id)).ifPresent(other->{throw new BackendException(CONFLICT,"La materia ya existe en esta carrera");});apply(s,input);return view(s);}
+    public TagView createTag(TagInput input){return view(tag(input.name()));}
+    public List<TagView> tags(String search){return repository.tags(search).stream().map(this::view).toList();}
 
     private void apply(Question q,QuestionInput input) {
         if(input.options().stream().filter(OptionInput::correct).count()!=1)

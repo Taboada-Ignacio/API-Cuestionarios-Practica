@@ -75,4 +75,66 @@ class BackendIntegrationTests extends ar.com.cuestionarios.PostgresIntegrationSu
         backend.deactivateBank(bank.id());
         assertThatThrownBy(()->backend.startBankAttempt(bank.id(),new StartAttemptInput(1,null))).isInstanceOf(BackendException.class);
     }
+    @Test void clasificacionAcademicaEsOpcionalYValida() {
+        BackendService backend=context.getBean(BackendService.class);
+        BankView plain=backend.createBank(new BankInput("Sin clasificación"));
+        assertThat(plain.subject()).isNull();
+        assertThat(plain.tags()).isEmpty();
+        assertThatThrownBy(()->backend.createBank(new BankInput("Inválido",null,null,2,List.of())))
+            .isInstanceOf(BackendException.class);
+
+        AcademicCatalog catalog=context.getBean(AcademicCatalog.class);
+        AcademicCatalog.Entry catalogCareer=catalog.careers.stream().filter(entry->entry.durationYears()!=null).findFirst().orElseThrow();
+        AcademicCatalog.Entry catalogFaculty=catalog.faculties.stream().filter(entry->entry.id().equals(catalogCareer.parent())).findFirst().orElseThrow();
+        int lastYear=catalogCareer.durationYears();
+        BankView catalogClassified=backend.createBank(new BankInput("Con catálogo",null,null,null,List.of(),catalogFaculty.parent(),catalogFaculty.id(),catalogCareer.id(),lastYear,"  inGenIeria   y SocIedad "));
+        assertThat(catalogClassified.academic().careerId()).isEqualTo(catalogCareer.id());
+        assertThat(catalogClassified.academic().studyYear()).isEqualTo(lastYear);
+        assertThat(catalogClassified.academic().subjectName()).isEqualTo("Ingenieria y Sociedad");
+        assertThatThrownBy(()->backend.createBank(new BankInput("Año fuera de rango",null,null,null,List.of(),catalogFaculty.parent(),catalogFaculty.id(),catalogCareer.id(),lastYear+1,null)))
+            .isInstanceOf(BackendException.class);
+
+        CareerView career=backend.createCareer(new CareerInput("Ingeniería en Sistemas","ISI",true));
+        assertThatThrownBy(()->backend.createCareer(new CareerInput("ingeniería EN sistemas",null,true)))
+            .isInstanceOf(BackendException.class);
+        SubjectView subject=backend.createSubject(new SubjectInput(career.id(),"Sistemas Operativos","SO",3,true));
+        assertThat(subject.career().id()).isEqualTo(career.id());
+        assertThat(backend.subjects(career.id(),3,true)).extracting(SubjectView::id).containsExactly(subject.id());
+        assertThatThrownBy(()->backend.createSubject(new SubjectInput(UUID.randomUUID(),"Inexistente",null,1,true))).isInstanceOf(BackendException.class);
+        assertThatThrownBy(()->backend.createSubject(new SubjectInput(career.id(),"sistemas operativos",null,3,true)))
+            .isInstanceOf(BackendException.class);
+
+        BankView classified=backend.createBank(new BankInput("Primer parcial",subject.id(),"PARCIAL",1,List.of("Memoria Virtual","memoria virtual","TLB")));
+        assertThat(classified.subject().id()).isEqualTo(subject.id());
+        assertThat(classified.subject().career().id()).isEqualTo(career.id());
+        assertThat(classified.subject().studyYear()).isEqualTo(3);
+        assertThat(classified.tags()).extracting(TagView::slug).containsExactly("memoria-virtual","tlb");
+        assertThat(backend.createTag(new TagInput("MEMORIA VIRTUAL")).id()).isEqualTo(classified.tags().get(0).id());
+        assertThat(backend.updateBank(classified.id(),new BankInput("Parcial renombrado")).tags()).hasSize(2);
+
+        BankView cleared=backend.updateBank(classified.id(),new BankInput("Primer parcial",null,null,null,List.of()));
+        assertThat(cleared.subject()).isNull();
+        assertThat(cleared.evaluationType()).isNull();
+        assertThat(cleared.evaluationNumber()).isNull();
+        assertThat(cleared.tags()).isEmpty();
+    }
+    @Test void filtrosAcademicosSeCombinanYEtiquetasUsanAnd() {
+        BackendService backend=context.getBean(BackendService.class);
+        CareerView career=backend.createCareer(new CareerInput("Licenciatura en Informática",null,true));
+        SubjectView subject=backend.createSubject(new SubjectInput(career.id(),"Arquitectura",null,2,true));
+        BankView both=backend.createBank(new BankInput("Parcial memoria",subject.id(),"PARCIAL",1,List.of("memoria","cache")));
+        backend.createBank(new BankInput("Solo memoria",subject.id(),"FINAL",null,List.of("memoria")));
+        backend.createBank(new BankInput("Otro tema"));
+
+        assertThat(backend.banks(0,20,false,new BankFilters(career.id(),null,null,null,null,List.of())).total()).isEqualTo(2);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,null,2,null,null,List.of())).total()).isEqualTo(2);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,subject.id(),null,null,null,List.of())).total()).isEqualTo(2);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,null,null,"PARCIAL",null,List.of())).total()).isEqualTo(1);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,null,null,null,1,List.of())).total()).isEqualTo(1);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,null,null,null,null,List.of("memoria"))).total()).isEqualTo(2);
+        assertThat(backend.banks(0,20,false,new BankFilters(career.id(),null,2,"PARCIAL",1,List.of("memoria","cache"))).items())
+            .extracting(BankView::id).containsExactly(both.id());
+        assertThat(backend.banks(0,20,false,new BankFilters(null,subject.id(),null,null,null,List.of("memoria"))).total()).isEqualTo(2);
+        assertThat(backend.banks(0,20,false,new BankFilters(null,null,null,null,null,List.of("memoria","cache"))).total()).isEqualTo(1);
+    }
 }

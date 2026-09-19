@@ -27,7 +27,7 @@ class SecurityConfig {
    http.oauth2Login(o->o.clientRegistrationRepository(new InMemoryClientRegistrationRepository(registration)).authorizationEndpoint(a->a.baseUri("/api/v1/auth/google/authorize")).redirectionEndpoint(e->e.baseUri("/api/v1/auth/google/callback/*"))
     .successHandler((req,res,auth)->{
      Object pending=req.getSession().getAttribute("googleLinkUser");req.getSession().removeAttribute("googleLinkUser");
-     try {OidcUser oidc=(OidcUser)auth.getPrincipal();UserAccount u=service.google(oidc.getSubject(),oidc.getEmail(),oidc.getGivenName(),oidc.getFamilyName(),Boolean.TRUE.equals(oidc.getEmailVerified()),pending instanceof UUID id?id:null);AuthController.signIn(u,req,res);res.sendRedirect("/#bienvenida");}
+     try {OidcUser oidc=(OidcUser)auth.getPrincipal();UserAccount u=service.google(oidc.getSubject(),oidc.getEmail(),oidc.getGivenName(),oidc.getFamilyName(),Boolean.TRUE.equals(oidc.getEmailVerified()),pending instanceof UUID id?id:null);AuthController.signIn(u,req,res);res.sendRedirect("/#dashboard");}
      catch(BackendException ex){req.getSession().invalidate();org.springframework.security.core.context.SecurityContextHolder.clearContext();res.sendRedirect("/#ingresar?google=error");}
     }).failureHandler((req,res,ex)->{if(req.getSession(false)!=null)req.getSession().removeAttribute("googleLinkUser");res.sendRedirect("/#ingresar?google=error");}));
   }

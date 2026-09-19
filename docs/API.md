@@ -4,6 +4,10 @@ Base: `http://localhost:8080/api/v1`. Todos los cuerpos usan JSON.
 Los índices de opciones comienzan en cero. Identificadores UUID.
 Las listas usan `?page=0&size=20` (máximo 100) y devuelven items, page, size y total.
 Incluyen recursos desactivados con active=false para conservar el historial.
+Salvo salud, catálogo académico, token CSRF, registro, ingreso, configuración
+de acceso e inicio del flujo Google, los endpoints requieren una sesión
+autenticada. Las operaciones de escritura requieren la cabecera CSRF obtenida
+en `GET /auth/csrf`.
 
 ## Bancos
 - POST /bancos — crear: `{"name":"Java"}`.
@@ -60,9 +64,14 @@ Las escrituras de respuestas y cierre se serializan mediante bloqueo de la fila 
 
 ## Errores
 - 400: validación, JSON o índice de opción inválidos.
+- 401: no hay una sesión autenticada.
+- 403: el recurso pertenece a otro usuario o el token CSRF falta o venció.
 - 404: recurso inexistente o pregunta ajena al intento.
 - 409: recurso desactivado, intento cerrado o preguntas disponibles insuficientes.
 Los errores de dominio y validación usan ProblemDetail, con detail y status.
+
+`GET /health` devuelve `{"status":"UP"}` después de comprobar el acceso a la
+base y se usa para los controles de salud de Docker.
 
 ## Ejecución y pruebas
 JDK 25 y Docker Desktop activo.

@@ -12,7 +12,7 @@ App: http://127.0.0.1:8090. Documentación: [docs/DOCKER.md](docs/DOCKER.md).
 
 API REST para la creación y gestión de cuestionarios, bancos de preguntas, intentos personalizados y corrección automática. Desarrollada con Java, Spring Boot y PostgreSQL.
 
-## Backend inicial
+## Tecnologías
 
 Java 25 LTS, Spring Boot 4.1.1, Maven, Spring Web MVC, JPA/Hibernate,
 Jakarta Bean Validation, PostgreSQL 17 y Flyway. Tests con JUnit 5,
@@ -56,9 +56,11 @@ la prueba no se omite si falta Docker.
 
 - `src/main/java/ar/com/cuestionarios`: aplicación Spring Boot.
 - `src/main/resources/application.properties`: configuración del entorno.
-- `src/main/resources/db/migration`: futuras migraciones SQL versionadas.
+- `src/main/resources/db/migration`: migraciones SQL versionadas del dominio y usuarios.
 - `src/test/java`: pruebas de integración.
-- `compose.yaml`: PostgreSQL local con volumen persistente.
+- `frontend`: aplicación React, importador Excel y pruebas del cliente.
+- `docs`: contrato de API y guías de usuarios, catálogo académico y Docker.
+- `compose.yaml`: aplicación completa con PostgreSQL, backend y frontend Nginx.
 
 Hibernate valida el esquema; los cambios de tablas se harán con Flyway.
 El dominio inicial incluye bancos, preguntas, cuestionarios e intentos.
@@ -68,6 +70,13 @@ El dominio inicial incluye bancos, preguntas, cuestionarios e intentos.
 Bancos, preguntas, cuestionarios e intentos con corrección automática.
 Contrato y ejemplos en [docs/API.md](docs/API.md). DELETE desactiva recursos.
 
+Además incluye cuentas locales y Google OIDC opcional, perfiles académicos,
+sesiones con CSRF, propiedad de recursos y estados BORRADOR, PRIVADO y PUBLICO.
+Ver [docs/USUARIOS.md](docs/USUARIOS.md) y
+[docs/CATALOGO-ACADEMICO.md](docs/CATALOGO-ACADEMICO.md).
+
 ## Frontend
 
-Panel de bienvenida en frontend/. Ver frontend/README.md para ejecutarlo.
+Aplicación React con bienvenida, registro e ingreso, perfil, creación manual o
+por Excel, gestión de estados, práctica, guardado automático e historial de
+resultados. Ver [frontend/README.md](frontend/README.md) para ejecutarla.

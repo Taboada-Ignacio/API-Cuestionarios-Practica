@@ -1,11 +1,14 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { LETTERS, validateQuestion, parseBankExcel } from './bankExcel';
 import './bank.css';
 import {api} from './attemptApi';
+import QuestionnaireClassification from './QuestionnaireClassification';
+import {classificationFromUser,classificationPayload,validateClassification} from './classificationRules';
 
 const emptyQuestion=()=>({statement:'',explanation:'',options:[{text:'',correct:false},{text:'',correct:false}]});
 
-export default function BankPanel() {
+export default function BankPanel({bankId=null,user=null}) {
+  const isEditing=!!bankId;
   const [name,setName]=useState('');
   const [status,setStatus]=useState('BORRADOR');
   const [mode,setMode]=useState('manual');
@@ -16,15 +19,21 @@ export default function BankPanel() {
   const [notice,setNotice]=useState('');
   const [busy,setBusy]=useState(false);
   const [saved,setSaved]=useState(null);
+  const [loading,setLoading]=useState(isEditing);
+  const [removedIds,setRemovedIds]=useState([]);
+  const initialClassification=()=>classificationFromUser(user);
+  const [classification,setClassification]=useState(initialClassification);
   const upload=useRef(null);
   const locked=busy || !!saved;
+
+  useEffect(()=>{if(!bankId)return;let cancelled=false;(async()=>{setError('');setLoading(true);try{const bank=await api('/bancos/'+bankId);const loaded=[];let page=0,total=1;while(loaded.length<total){const result=await api('/bancos/'+bankId+'/preguntas?page='+page+'&size=100');loaded.push(...result.items.filter(q=>q.active));total=result.total;page++;}if(!cancelled){setName(bank.name);setStatus(bank.status);setQuestions(loaded);}}catch(e){if(!cancelled)setError(e.message);}finally{if(!cancelled)setLoading(false);}})();return()=>{cancelled=true;};},[bankId]);
 
   function addQuestion(event) {
     event.preventDefault(); setError(''); setNotice('');
     const problem=validateQuestion(draft);
     if(problem) { setError(problem); return; }
     if(editing===null && questions.length>=1000) {setError('El cuestionario admite hasta 1.000 preguntas por carga.');return;}
-    const cleaned={statement:draft.statement.trim(),explanation:draft.explanation.trim(),
+    const cleaned={...(editing!==null&&questions[editing]?.id?{id:questions[editing].id}:{}),statement:draft.statement.trim(),explanation:draft.explanation.trim(),
       options:draft.options.map(o=>({...o,text:o.text.trim()}))};
     setQuestions(current=>editing===null?[...current,cleaned]:current.map((q,i)=>i===editing?cleaned:q));
     setNotice(editing===null?'Pregunta agregada a la revisión.':'Pregunta actualizada.');
@@ -35,6 +44,7 @@ export default function BankPanel() {
     requestAnimationFrame(()=>document.getElementById('enunciado')?.focus());
   }
   function removeQuestion(index) {
+    const removed=questions[index];if(removed?.id)setRemovedIds(ids=>[...ids,removed.id]);
     setQuestions(q=>q.filter((_,i)=>i!==index));
     if(editing===index) {setDraft(emptyQuestion());setEditing(null);}
     else if(editing!==null && editing>index) setEditing(editing-1);
@@ -54,26 +64,34 @@ export default function BankPanel() {
     setError('');setNotice('');
     if(!name.trim() || name.trim().length>200) {setError('Ingresá un nombre de cuestionario de hasta 200 caracteres.');document.getElementById('bank-name')?.focus();return;}
     if(!questions.length) {setError('Agregá al menos una pregunta antes de guardar.');return;}
+    if(!isEditing){const classificationError=validateClassification(classification);if(classificationError){setError(classificationError);return;}}
     if(draft.statement.trim() || draft.explanation.trim() || draft.options.some(o=>o.text.trim())) {
       setError('Hay una pregunta en edición. Agregala a la revisión o descartala antes de guardar.');return;
     }
     setBusy(true);
     try {
-      const body=await api('/bancos/carga',{method:'POST',body:JSON.stringify({name:name.trim(),questions,status})});
+      let body;
+      if(isEditing){
+        body=await api('/bancos/'+bankId,{method:'PUT',body:JSON.stringify({name:name.trim()})});
+        for(const question of questions){const payload={statement:question.statement,explanation:question.explanation,options:question.options};await api(question.id?'/preguntas/'+question.id:'/bancos/'+bankId+'/preguntas',{method:question.id?'PUT':'POST',body:JSON.stringify(payload)});}
+        for(const id of removedIds)await api('/preguntas/'+id,{method:'DELETE'});
+        body=await api('/bancos/'+bankId+'/estado',{method:'PUT',body:JSON.stringify({status})});
+      }else body=await api('/bancos/carga',{method:'POST',body:JSON.stringify({name:name.trim(),questions,status,...classificationPayload(classification)})});
       setSaved(body);setNotice('Cuestionario guardado con '+questions.length+' preguntas.');
     } catch(e) {setError(e instanceof TypeError?'No hay conexión con el backend. Las preguntas siguen en este panel; verificá la conexión antes de reintentar.':e.message);}
     finally {setBusy(false);}
   }
   function reset() {
-    setName('');setStatus('BORRADOR');setQuestions([]);setDraft(emptyQuestion());setEditing(null);setSaved(null);setError('');setNotice('');setMode('manual');
+    setName('');setStatus('BORRADOR');setQuestions([]);setDraft(emptyQuestion());setEditing(null);setSaved(null);setError('');setNotice('');setMode('manual');setClassification(initialClassification());
   }
   function optionText(index,text) {
     setDraft(q=>({...q,options:q.options.map((o,i)=>i===index?{...o,text}:o)}));
   }
 
   return <div className="bank-panel">
-    <a href="#bienvenida" className="back-link">← Volver a bienvenida</a>
-    <div className="bank-heading"><div><p className="eyebrow">Cuestionarios</p><h1>Cargá lo que querés practicar.</h1><p>Creá un cuestionario y sumá tus preguntas, una a una o desde un Excel.</p></div><span className="bank-heading-mark" aria-hidden="true">?</span></div>
+    <a href="#cuestionarios" className="back-link">← Volver a Mis cuestionarios</a>
+    <div className="bank-heading"><div><p className="eyebrow">{isEditing?'Editar cuestionario':'Cuestionarios'}</p><h1>{isEditing?'Actualizá tu cuestionario.':'Cargá lo que querés practicar.'}</h1><p>{isEditing?'Modificá el nombre, el estado o cualquiera de sus preguntas.':'Creá un cuestionario y sumá tus preguntas, una a una o desde un Excel.'}</p></div><span className="bank-heading-mark" aria-hidden="true">?</span></div>
+    {loading?<div className="bank-box" role="status">Cargando cuestionario…</div>:
     <div className="bank-layout">
       <div className="bank-workspace">
         <section className="bank-box" aria-labelledby="bank-data-title">
@@ -85,6 +103,7 @@ export default function BankPanel() {
           <label className="field">Estado del cuestionario<select aria-label="Estado del cuestionario" value={status} disabled={locked} onChange={e=>setStatus(e.target.value)}><option value="BORRADOR">Borrador · preparar preguntas</option><option value="PRIVADO">Privado · solo para mí</option><option value="PUBLICO">Público · otros usuarios pueden practicar</option></select></label>
           <p className="field-help">Podés cambiar el estado después desde Mis cuestionarios.</p>
         </section>
+        {!isEditing&&<QuestionnaireClassification value={classification} onChange={setClassification} disabled={locked} />}
         <section className="bank-box" aria-labelledby="load-title">
           <div className="box-title"><h2 id="load-title">Agregar preguntas</h2><span className="field-help">Una única respuesta correcta</span></div>
           <div className="mode-switch" aria-label="Método de carga">
@@ -131,12 +150,12 @@ export default function BankPanel() {
         </section>
       </div>
       <aside className="bank-summary">
-        <p className="eyebrow">Tu nuevo cuestionario</p><h2>{name.trim() || 'Un tema, muchas preguntas.'}</h2>
+        <p className="eyebrow">{isEditing?'Cambios del cuestionario':'Tu nuevo cuestionario'}</p><h2>{name.trim() || 'Un tema, muchas preguntas.'}</h2>
         <div className="summary-count"><strong>{questions.length}</strong><span>{questions.length===1?'pregunta lista':'preguntas listas'}</span></div>
         <p>Podés combinar la carga manual con preguntas importadas desde Excel.</p>
-        {saved?<><p className="saved-label">✓ Cuestionario guardado</p><button className="bank-primary" onClick={reset}>Crear otro cuestionario</button></>:<button className="bank-primary" disabled={busy} onClick={saveBank}>{busy?'Procesando…':'Guardar cuestionario'}</button>}
-        <small>{saved?'Tus preguntas ya forman parte del cuestionario.':'Las preguntas se guardan juntas al confirmar. Los cambios sin guardar se pierden al salir o recargar.'}</small>
+        {saved?<><p className="saved-label">✓ Cambios guardados</p><a className="bank-primary" href="#cuestionarios">Volver a Mis cuestionarios</a></>:<button className="bank-primary" disabled={busy} onClick={saveBank}>{busy?'Procesando…':isEditing?'Guardar cambios':'Guardar cuestionario'}</button>}
+        <small>{saved?'Tus preguntas ya forman parte del cuestionario.':isEditing?'Los cambios se aplicarán sobre este mismo cuestionario.':'Las preguntas se guardan juntas al confirmar. Los cambios sin guardar se pierden al salir o recargar.'}</small>
       </aside>
-    </div>
+    </div>}
   </div>;
 }

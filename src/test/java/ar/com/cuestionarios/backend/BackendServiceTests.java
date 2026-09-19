@@ -13,7 +13,7 @@ class BackendServiceTests {
     Bank ownedBank(){Bank b=new Bank();b.ownerId=user.id;b.status="PRIVADO";return b;}
     Quiz ownedQuiz(){Quiz q=new Quiz();q.ownerId=user.id;return q;}
     Attempt ownedAttempt(){Attempt a=new Attempt();a.ownerId=user.id;return a;}
-    @BeforeEach void setup() { repository=mock(BackendRepository.class); CurrentUser current=mock(CurrentUser.class);user.name="Ana";when(current.complete()).thenReturn(user);service=new BackendService(repository,current); }
+    @BeforeEach void setup() { repository=mock(BackendRepository.class); CurrentUser current=mock(CurrentUser.class);user.name="Ana";when(current.complete()).thenReturn(user);service=new BackendService(repository,current,mock(AcademicCatalog.class)); }
     AttemptQuestion question(Attempt a) {
         AttemptQuestion q=new AttemptQuestion(); q.attemptId=a.id; q.statement="Pregunta";
         q.explanation="Explicación"; q.options.add(new Option("Correcta",true)); q.options.add(new Option("Incorrecta",false)); return q;

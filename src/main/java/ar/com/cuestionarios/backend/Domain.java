@@ -10,8 +10,50 @@ class Bank {
     @Column(nullable=false,length=200) String name;
     @Column(name="owner_id",nullable=false) UUID ownerId;
     @Column(nullable=false,length=20) String status="BORRADOR";
+    @Column(name="subject_id") UUID subjectId;
+    @Enumerated(EnumType.STRING) @Column(name="evaluation_type",length=30) EvaluationType evaluationType;
+    @Column(name="evaluation_number") Integer evaluationNumber;
+    @Column(name="academic_university_id",length=32) String academicUniversityId;
+    @Column(name="academic_faculty_id",length=32) String academicFacultyId;
+    @Column(name="academic_career_id",length=32) String academicCareerId;
+    @Column(name="study_year") Integer studyYear;
+    @Column(name="academic_subject_name",length=200) String academicSubjectName;
+    @ManyToMany(fetch=FetchType.LAZY)
+    @JoinTable(name="bank_tags",joinColumns=@JoinColumn(name="bank_id"),inverseJoinColumns=@JoinColumn(name="tag_id"))
+    Set<Tag> tags=new LinkedHashSet<>();
     boolean active=true;
     protected Bank() {}
+}
+enum EvaluationType { PARCIAL,TRABAJO_PRACTICO,FINAL,RECUPERATORIO,PRACTICA,OTRO }
+@Entity @Table(name="careers")
+class Career {
+    @Id UUID id=UUID.randomUUID();
+    @Column(nullable=false,length=200) String name;
+    @Column(length=50) String code;
+    boolean active=true;
+    @Column(name="created_at",nullable=false) Instant createdAt=Instant.now();
+    @Column(name="updated_at",nullable=false) Instant updatedAt=Instant.now();
+    protected Career() {}
+}
+@Entity @Table(name="subjects")
+class Subject {
+    @Id UUID id=UUID.randomUUID();
+    @Column(name="career_id",nullable=false) UUID careerId;
+    @Column(nullable=false,length=200) String name;
+    @Column(length=50) String code;
+    @Column(name="study_year",nullable=false) int studyYear;
+    boolean active=true;
+    @Column(name="created_at",nullable=false) Instant createdAt=Instant.now();
+    @Column(name="updated_at",nullable=false) Instant updatedAt=Instant.now();
+    protected Subject() {}
+}
+@Entity @Table(name="tags")
+class Tag {
+    @Id UUID id=UUID.randomUUID();
+    @Column(nullable=false,length=100) String name;
+    @Column(nullable=false,unique=true,length=120) String slug;
+    @Column(name="created_at",nullable=false) Instant createdAt=Instant.now();
+    protected Tag() {}
 }
 @Embeddable
 class Option {

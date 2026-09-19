@@ -9,7 +9,7 @@ Los resultados e historial pertenecen al usuario del intento, incluso si el cues
 GET /api/v1/auth/csrf devuelve token y headerName. Enviar esa cabecera en POST, PUT y DELETE; obtenerla nuevamente tras autenticar o cerrar sesión.
 POST /api/v1/auth/registro: name, lastName, email, password, academic {university, faculty, career, note}.
 POST /api/v1/auth/ingresar: email, password. GET /api/v1/auth/me: perfil actual. PUT /api/v1/auth/perfil: {name, lastName, academic {university, faculty, career, note}}. POST /api/v1/auth/salir: invalidar sesión.
-GET /api/v1/auth/config indica si Google está habilitado. GET /api/v1/academia/universidades, /facultades?university=ID y /carreras?faculty=ID.
+GET /api/v1/auth/config indica si Google está habilitado. GET /api/v1/academia/universidades, /facultades?university=ID y /carreras?faculty=ID. Los tres buscadores aceptan `q` opcional, buscan por fragmento sin distinguir mayúsculas y ordenan por nombre.
 GET /api/v1/bancos muestra solo los propios. `?scope=practice` muestra los propios privados/públicos activos y los públicos de terceros.
 PUT /api/v1/bancos/{id}/estado acepta {status: BORRADOR|PRIVADO|PUBLICO}. POST /bancos/carga admite status opcional, por defecto BORRADOR.
 Los identificadores de propietarios nunca se toman de los cuerpos del cliente.
